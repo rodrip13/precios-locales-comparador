@@ -1,0 +1,54 @@
+# Archivos de Android Studio / IntelliJ
+*.iml
+.gradle
+/local.properties
+/.idea/caches
+/.idea/libraries
+/.idea/modules.xml
+/.idea/workspace.xml
+/.idea/navEditor.xml
+/.idea/assetWizardSettings.xml
+/.idea/deploymentTargetDropDown.xml
+/.idea/misc.xml
+/.idea/dictionaries
+/.idea/shelf
+
+# Archivos de Gradle Wrapper (¡IMPORTANTE!)
+gradle/wrapper/gradle-wrapper.jar
+gradle/gradle-daemon-jvm.properties
+
+# Build outputs
+/build
+/captures
+.externalNativeBuild
+.cxx
+app/build
+build
+
+# Archivos del sistema
+.DS_Store
+*.DS_Store
+Thumbs.db
+*.swp
+*.lock
+
+# Logs
+*.log
+
+# Keystores (archivos de firma)
+*.jks
+*.keystore
+*.key
+
+# Archivos de propiedades con datos sensibles
+**/local.properties
+**/gradle.properties.local
+**/gradle.properties.bak
+
+# Backup de archivos
+*.bak
+*.tmp
+
+# API Keys (si usas algún servicio)
+apikey.properties
+secrets.properties
