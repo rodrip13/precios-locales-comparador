@@ -27,6 +27,7 @@ import com.rodrip.precioslocales.comparador.ui.search.SearchScreen
 import com.rodrip.precioslocales.comparador.ui.stores.AddEditStoreScreen
 import com.rodrip.precioslocales.comparador.ui.stores.StoreListScreen
 import com.rodrip.precioslocales.comparador.ui.stores.StoreViewModel
+import com.rodrip.precioslocales.comparador.ui.settings.SettingsScreen
 
 @Composable
 fun MainScreen(storeViewModel: StoreViewModel) {
@@ -85,7 +86,7 @@ fun MainScreen(storeViewModel: StoreViewModel) {
                 )
             }
             composable(Screen.Settings.route) {
-                Text("Ajustes y Exportación CSV (Próximamente)", modifier = Modifier.padding(innerPadding))
+                SettingsScreen()
             }
             composable(
                 route = Screen.AddEditStore.route,

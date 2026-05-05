@@ -26,10 +26,14 @@ interface RegistroPrecioDao {
         SELECT s.*, pr.price as price, pr.timestamp as lastUpdate
         FROM stores s
         INNER JOIN (
-            SELECT storeId, price, timestamp
-            FROM price_records 
-            WHERE productId = :productId
-            AND timestamp = (SELECT MAX(timestamp) FROM price_records WHERE productId = :productId AND storeId = price_records.storeId)
+            SELECT pr1.storeId, pr1.price, pr1.timestamp
+            FROM price_records pr1
+            WHERE pr1.productId = :productId
+            AND pr1.timestamp = (
+                SELECT MAX(timestamp) 
+                FROM price_records pr2 
+                WHERE pr2.productId = :productId AND pr2.storeId = pr1.storeId
+            )
         ) pr ON s.id = pr.storeId
         ORDER BY pr.price ASC
     """)
