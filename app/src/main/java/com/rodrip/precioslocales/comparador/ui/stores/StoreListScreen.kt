@@ -8,10 +8,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.Storefront
+import androidx.compose.material.icons.rounded.Inventory
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
@@ -23,10 +22,12 @@ import com.rodrip.precioslocales.comparador.data.local.entity.LocalComercial
 fun StoreListScreen(
     viewModel: StoreViewModel,
     onAddStore: () -> Unit,
+    onAddProduct: () -> Unit,
     onEditStore: (Long) -> Unit,
     onStoreClick: (Long) -> Unit
 ) {
     val stores by viewModel.stores.collectAsState()
+    var showFabMenu by remember { mutableStateOf(false) }
 
     Scaffold(
         topBar = {
@@ -35,8 +36,31 @@ fun StoreListScreen(
             )
         },
         floatingActionButton = {
-            FloatingActionButton(onClick = onAddStore) {
-                Icon(Icons.Rounded.Add, contentDescription = "Agregar Local")
+            Box {
+                FloatingActionButton(onClick = { showFabMenu = true }) {
+                    Icon(Icons.Rounded.Add, contentDescription = "Opciones")
+                }
+                DropdownMenu(
+                    expanded = showFabMenu,
+                    onDismissRequest = { showFabMenu = false }
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("Nuevo Local") },
+                        onClick = {
+                            showFabMenu = false
+                            onAddStore()
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.Storefront, null) }
+                    )
+                    DropdownMenuItem(
+                        text = { Text("Nuevo Producto") },
+                        onClick = {
+                            showFabMenu = false
+                            onAddProduct()
+                        },
+                        leadingIcon = { Icon(Icons.Rounded.Inventory, null) }
+                    )
+                }
             }
         }
     ) { padding ->

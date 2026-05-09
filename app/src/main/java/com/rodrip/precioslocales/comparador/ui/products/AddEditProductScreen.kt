@@ -1,9 +1,11 @@
 package com.rodrip.precioslocales.comparador.ui.products
 
 import android.Manifest
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
@@ -13,10 +15,13 @@ import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.QrCodeScanner
 import androidx.compose.material.icons.rounded.Save
 import androidx.compose.material.icons.rounded.PhotoCamera
+import androidx.compose.material.icons.rounded.Cloud
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -24,6 +29,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.core.net.toUri
 import coil.compose.AsyncImage
+import com.google.mlkit.vision.common.InputImage
+import com.google.mlkit.vision.segmentation.subject.SubjectSegmentation
+import com.google.mlkit.vision.segmentation.subject.SubjectSegmenterOptions
 import com.rodrip.precioslocales.comparador.ui.components.BarcodeScannerView
 import java.io.File
 import java.util.*
@@ -32,41 +40,64 @@ import java.util.*
 @Composable
 fun AddEditProductScreen(
     viewModel: ProductViewModel,
-    storeId: Long,
+    initialStoreId: Long?,
     productId: Long?,
     onNavigateBack: () -> Unit
 ) {
     val context = LocalContext.current
 
-    var name by remember { mutableStateOf("") }
-    var barcode by remember { mutableStateOf("") }
-    var weightQuantity by remember { mutableStateOf("") }
-    var price by remember { mutableStateOf("") }
-    var photoUri by remember { mutableStateOf<Uri?>(null) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var barcode by rememberSaveable { mutableStateOf("") }
+    var weightQuantity by rememberSaveable { mutableStateOf("") }
+    var price by rememberSaveable { mutableStateOf("") }
     
-    var showScanner by remember { mutableStateOf(false) }
+    var photoUri by rememberSaveable { mutableStateOf<String?>(null) }
+    var tempPhotoUri by rememberSaveable { mutableStateOf<String?>(null) }
+    
+    var showPhotoOptions by rememberSaveable { mutableStateOf(false) }
+    var isProcessingImage by rememberSaveable { mutableStateOf(false) }
+    
+    var showScanner by rememberSaveable { mutableStateOf(false) }
     val isEdit = productId != null
 
-    val scannedProduct by viewModel.scannedProduct.collectAsState()
+    val stores by viewModel.stores.collectAsState()
+    var selectedStoreId by rememberSaveable { mutableStateOf(initialStoreId) }
+    var expandedStoreMenu by rememberSaveable { mutableStateOf(false) }
+
+    val scannedProductState by viewModel.scannedProductState.collectAsState()
+
+    val segmenter = remember {
+        val options = SubjectSegmenterOptions.Builder()
+            .enableForegroundBitmap()
+            .build()
+        SubjectSegmentation.getClient(options)
+    }
+
+    // Cerramos el segmentador cuando se destruye el componente
+    DisposableEffect(Unit) {
+        onDispose {
+            segmenter.close()
+        }
+    }
 
     LaunchedEffect(productId) {
-        if (isEdit) {
+        if (isEdit && name.isEmpty()) {
             viewModel.getProductById(productId!!).let { product ->
                 if (product != null) {
                     name = product.name
                     barcode = product.barcode ?: ""
                     weightQuantity = product.weightQuantity
-                    photoUri = product.photoUri?.toUri()
+                    photoUri = product.photoUri ?: product.remotePhotoUrl
                 }
             }
         }
     }
 
-    LaunchedEffect(scannedProduct) {
-        scannedProduct?.let { product ->
+    LaunchedEffect(scannedProductState) {
+        scannedProductState.product?.let { product ->
             name = product.name
             weightQuantity = product.weightQuantity
-            photoUri = product.photoUri?.toUri()
+            photoUri = product.photoUri ?: product.remotePhotoUrl
             viewModel.clearScannedProduct()
         }
     }
@@ -79,12 +110,74 @@ fun AddEditProductScreen(
         }
     }
 
+    fun processSubjectSegmentation(sourceUri: Uri) {
+        // Feedback visual inmediato: mostramos la foto original mientras la IA trabaja
+        photoUri = sourceUri.toString()
+        isProcessingImage = true
+        
+        try {
+            val image = InputImage.fromFilePath(context, sourceUri)
+            segmenter.process(image)
+                .addOnSuccessListener { result ->
+                    val foregroundBitmap = result.foregroundBitmap
+                    if (foregroundBitmap != null) {
+                        val file = File(context.cacheDir, "product_${UUID.randomUUID()}.jpg")
+                        file.outputStream().use { out ->
+                            foregroundBitmap.compress(Bitmap.CompressFormat.JPEG, 90, out)
+                        }
+                        // Actualizamos con la versión recortada automáticamente
+                        photoUri = Uri.fromFile(file).toString()
+                    }
+                    isProcessingImage = false
+                }
+                .addOnFailureListener {
+                    isProcessingImage = false
+                }
+        } catch (e: Exception) {
+            isProcessingImage = false
+        }
+    }
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri ->
+        if (uri != null) {
+            processSubjectSegmentation(uri)
+        }
+    }
+
     val takePictureLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicture()
     ) { success ->
-        if (!success) {
-            // Handle failure if needed, maybe reset photoUri
+        if (success) {
+            tempPhotoUri?.let { processSubjectSegmentation(it.toUri()) }
         }
+    }
+
+    if (showPhotoOptions) {
+        AlertDialog(
+            onDismissRequest = { showPhotoOptions = false },
+            title = { Text("Elegir imagen") },
+            text = {
+                Column {
+                    TextButton(onClick = {
+                        showPhotoOptions = false
+                        val file = File(context.cacheDir, "temp_photo_${UUID.randomUUID()}.jpg")
+                        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+                        tempPhotoUri = uri.toString()
+                        takePictureLauncher.launch(uri)
+                    }) { Text("Cámara") }
+                    
+                    TextButton(onClick = {
+                        showPhotoOptions = false
+                        galleryLauncher.launch("image/*")
+                    }) { Text("Galería") }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showPhotoOptions = false }) { Text("Cancelar") }
+            }
+        )
     }
 
     if (showScanner) {
@@ -113,23 +206,29 @@ fun AddEditProductScreen(
         floatingActionButton = {
             ExtendedFloatingActionButton(
                 onClick = {
-                    if (name.isBlank() || price.isBlank()) return@ExtendedFloatingActionButton
+                    if (name.isBlank() || price.isBlank() || selectedStoreId == null || isProcessingImage) return@ExtendedFloatingActionButton
                     viewModel.saveProductWithPrice(
-                        storeId = storeId,
+                        storeId = selectedStoreId!!,
                         productId = productId ?: 0L,
                         barcode = barcode.takeIf { it.isNotBlank() },
                         name = name,
                         weightQuantity = weightQuantity,
-                        photoUri = photoUri?.toString(),
+                        photoUri = photoUri,
                         price = price.toDoubleOrNull() ?: 0.0,
                         onSuccess = onNavigateBack
                     )
                 },
-                icon = { Icon(Icons.Rounded.Save, contentDescription = null) },
-                text = { Text("Guardar") }
+                icon = { 
+                    if (isProcessingImage) {
+                        CircularProgressIndicator(modifier = Modifier.size(24.dp), color = MaterialTheme.colorScheme.onPrimaryContainer)
+                    } else {
+                        Icon(Icons.Rounded.Save, contentDescription = null)
+                    }
+                },
+                text = { Text(if (isProcessingImage) "Procesando..." else "Guardar") }
             )
         }
-    ) { padding ->
+        ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -138,35 +237,99 @@ fun AddEditProductScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (scannedProductState.source == ProductSource.REMOTE) {
+                Surface(
+                    shape = MaterialTheme.shapes.small,
+                    color = MaterialTheme.colorScheme.primaryContainer,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(
+                            Icons.Rounded.Cloud,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Text(
+                            "Datos cargados desde la nube · Solo falta el precio y el local",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                        )
+                    }
+                }
+            }
+
             Card(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(200.dp),
                 onClick = {
-                    val file = File(context.cacheDir, "photo_${UUID.randomUUID()}.jpg")
-                    val uri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.fileprovider",
-                        file
-                    )
-                    photoUri = uri
-                    takePictureLauncher.launch(uri)
+                    if (!isProcessingImage) showPhotoOptions = true
                 }
             ) {
                 Box(contentAlignment = Alignment.Center, modifier = Modifier.fillMaxSize()) {
                     if (photoUri != null) {
-                        AsyncImage(
-                            model = photoUri,
-                            contentDescription = null,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop
-                        )
+                        Box(contentAlignment = Alignment.Center) {
+                            AsyncImage(
+                                model = photoUri,
+                                contentDescription = null,
+                                modifier = Modifier.fillMaxSize().padding(8.dp),
+                                contentScale = ContentScale.Fit
+                            )
+                            if (isProcessingImage) {
+                                Box(
+                                    modifier = Modifier
+                                        .fillMaxSize()
+                                        .background(Color.Black.copy(alpha = 0.3f)),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    CircularProgressIndicator(color = Color.White)
+                                }
+                            }
+                        }
+                    } else if (isProcessingImage) {
+                        CircularProgressIndicator()
                     } else {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                             Icon(Icons.Rounded.PhotoCamera, contentDescription = null, modifier = Modifier.size(48.dp))
                             Spacer(modifier = Modifier.height(8.dp))
                             Text("Tocar para tomar foto")
                         }
+                    }
+                }
+            }
+
+            ExposedDropdownMenuBox(
+                expanded = expandedStoreMenu,
+                onExpandedChange = { expandedStoreMenu = !expandedStoreMenu }
+            ) {
+                OutlinedTextField(
+                    value = stores.find { it.id == selectedStoreId }?.name ?: "Seleccionar Local",
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text("Local Comercial") },
+                    trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expandedStoreMenu) },
+                    modifier = Modifier
+                        .menuAnchor(type = MenuAnchorType.PrimaryNotEditable, enabled = true)
+                        .fillMaxWidth(),
+                    colors = ExposedDropdownMenuDefaults.outlinedTextFieldColors()
+                )
+                ExposedDropdownMenu(
+                    expanded = expandedStoreMenu,
+                    onDismissRequest = { expandedStoreMenu = false }
+                ) {
+                    stores.forEach { store ->
+                        DropdownMenuItem(
+                            text = { Text(store.name) },
+                            onClick = {
+                                selectedStoreId = store.id
+                                expandedStoreMenu = false
+                            }
+                        )
                     }
                 }
             }

@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.annotation.OptIn
 import androidx.camera.core.*
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.lifecycle.awaitInstance
 import androidx.camera.view.PreviewView
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -16,7 +17,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.mlkit.vision.barcode.BarcodeScannerOptions
 import com.google.mlkit.vision.barcode.BarcodeScanning
@@ -32,50 +32,52 @@ fun BarcodeScannerView(
     val context = LocalContext.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    
-    val cameraProviderFuture = remember { ProcessCameraProvider.getInstance(context) }
+
+    var cameraProvider by remember { mutableStateOf<ProcessCameraProvider?>(null) }
+
+    LaunchedEffect(context) {
+        cameraProvider = ProcessCameraProvider.awaitInstance(context)
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         AndroidView(
             factory = { ctx ->
                 val previewView = PreviewView(ctx)
-                val executor = ContextCompat.getMainExecutor(ctx)
-                cameraProviderFuture.addListener({
-                    val cameraProvider = cameraProviderFuture.get()
-                    val preview = Preview.Builder().build().also {
-                        it.setSurfaceProvider(previewView.surfaceProvider)
-                    }
-
-                    val scanner = BarcodeScanning.getClient(
-                        BarcodeScannerOptions.Builder()
-                            .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
-                            .build()
-                    )
-
-                    val imageAnalysis = ImageAnalysis.Builder()
-                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                        .build()
-                        .also { analysis ->
-                            analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                                processImageProxy(scanner, imageProxy, onBarcodeScanned)
-                            }
-                        }
-
-                    val cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
-
-                    try {
-                        cameraProvider.unbindAll()
-                        cameraProvider.bindToLifecycle(
-                            lifecycleOwner,
-                            cameraSelector,
-                            preview,
-                            imageAnalysis
-                        )
-                    } catch (e: Exception) {
-                        Log.e("BarcodeScanner", "Use case binding failed", e)
-                    }
-                }, executor)
                 previewView
+            },
+            update = { previewView ->
+                val provider = cameraProvider ?: return@AndroidView
+
+                val scanner = BarcodeScanning.getClient(
+                    BarcodeScannerOptions.Builder()
+                        .setBarcodeFormats(Barcode.FORMAT_ALL_FORMATS)
+                        .build()
+                )
+
+                val imageAnalysis = ImageAnalysis.Builder()
+                    .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                    .build()
+                    .also { analysis ->
+                        analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                            processImageProxy(scanner, imageProxy, onBarcodeScanned)
+                        }
+                    }
+
+                val preview = Preview.Builder().build().also {
+                    it.setSurfaceProvider(previewView.surfaceProvider)
+                }
+
+                try {
+                    provider.unbindAll()
+                    provider.bindToLifecycle(
+                        lifecycleOwner,
+                        CameraSelector.DEFAULT_BACK_CAMERA,
+                        preview,
+                        imageAnalysis
+                    )
+                } catch (e: Exception) {
+                    Log.e("BarcodeScanner", "Use case binding failed", e)
+                }
             },
             modifier = Modifier.fillMaxSize()
         )
@@ -91,9 +93,7 @@ fun BarcodeScannerView(
     }
 
     DisposableEffect(Unit) {
-        onDispose {
-            cameraExecutor.shutdown()
-        }
+        onDispose { cameraExecutor.shutdown() }
     }
 }
 
@@ -109,13 +109,11 @@ private fun processImageProxy(
         scanner.process(image)
             .addOnSuccessListener { barcodes ->
                 for (barcode in barcodes) {
-                    barcode.rawValue?.let { 
-                        onBarcodeScanned(it)
-                    }
+                    barcode.rawValue?.let { onBarcodeScanned(it) }
                 }
             }
-            .addOnFailureListener {
-                Log.e("BarcodeScanner", "Barcode scanning failed", it)
+            .addOnFailureListener { e ->
+                Log.e("BarcodeScanner", "Barcode scanning failed", e)
             }
             .addOnCompleteListener {
                 imageProxy.close()

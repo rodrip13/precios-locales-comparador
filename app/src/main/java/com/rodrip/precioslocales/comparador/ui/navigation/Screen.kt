@@ -19,10 +19,15 @@ sealed class Screen(val route: String, val title: String? = null, val icon: Imag
         fun createRoute(storeId: Long) = "product_list/$storeId"
     }
 
-    object AddEditProduct : Screen("add_edit_product/{storeId}?productId={productId}") {
-        fun createRoute(storeId: Long, productId: Long? = null) = 
-            if (productId != null) "add_edit_product/$storeId?productId=$productId" 
-            else "add_edit_product/$storeId"
+    object AddEditProduct : Screen("add_edit_product?storeId={storeId}&productId={productId}") {
+        fun createRoute(storeId: Long? = null, productId: Long? = null): String {
+            val builder = StringBuilder("add_edit_product")
+            val params = mutableListOf<String>()
+            if (storeId != null) params.add("storeId=$storeId")
+            if (productId != null) params.add("productId=$productId")
+            if (params.isNotEmpty()) builder.append("?").append(params.joinToString("&"))
+            return builder.toString()
+        }
     }
 
     object ProductComparison : Screen("product_comparison/{productId}") {

@@ -21,6 +21,21 @@ interface ProductoDao {
     @Query("SELECT * FROM products WHERE barcode = :barcode")
     suspend fun getProductByBarcode(barcode: String): Producto?
 
+    @Query("SELECT * FROM products WHERE remoteId IS NULL")
+    suspend fun getUnsynced(): List<Producto>
+
+    @Query("SELECT * FROM products WHERE remoteId IS NOT NULL AND remotePhotoUrl IS NULL AND photoUri IS NOT NULL")
+    suspend fun getProductsMissingRemotePhoto(): List<Producto>
+
+    @Query("SELECT * FROM products WHERE remotePhotoUrl IS NOT NULL AND photoUri IS NULL")
+    suspend fun getProductsMissingLocalPhoto(): List<Producto>
+
+    @Query("UPDATE products SET remoteId = :remoteId, remotePhotoUrl = :remotePhotoUrl WHERE id = :localId")
+    suspend fun updateSyncInfo(localId: Long, remoteId: String, remotePhotoUrl: String?)
+
+    @Query("UPDATE products SET remotePhotoUrl = :remotePhotoUrl WHERE id = :localId")
+    suspend fun updateRemotePhotoUrl(localId: Long, remotePhotoUrl: String)
+
     @Query("SELECT * FROM products WHERE name LIKE '%' || :query || '%'")
     fun searchProducts(query: String): Flow<List<Producto>>
 
@@ -28,10 +43,10 @@ interface ProductoDao {
         SELECT p.*, pr.price as price, pr.timestamp as lastUpdate
         FROM products p
         INNER JOIN (
-            SELECT productId, price, timestamp
-            FROM price_records 
-            WHERE storeId = :storeId
-            AND timestamp = (SELECT MAX(timestamp) FROM price_records WHERE productId = price_records.productId AND storeId = :storeId)
+            SELECT pr1.productId, pr1.price, pr1.timestamp
+            FROM price_records pr1
+            WHERE pr1.storeId = :storeId
+            AND pr1.timestamp = (SELECT MAX(timestamp) FROM price_records pr2 WHERE pr2.productId = pr1.productId AND pr2.storeId = :storeId)
         ) pr ON p.id = pr.productId
         ORDER BY p.name ASC
     """)

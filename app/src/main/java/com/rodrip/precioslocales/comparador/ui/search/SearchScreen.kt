@@ -11,10 +11,14 @@ import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.graphics.vector.ImageVector
+import coil.compose.AsyncImage
 import com.rodrip.precioslocales.comparador.data.local.entity.LocalComercial
 import com.rodrip.precioslocales.comparador.data.local.entity.Producto
 import com.rodrip.precioslocales.comparador.ui.products.ProductViewModel
@@ -96,6 +100,7 @@ fun SearchScreen(
                             title = product.name,
                             subtitle = product.barcode ?: product.weightQuantity,
                             icon = Icons.Rounded.Inventory2,
+                            imageUrl = product.photoUri,
                             onClick = { onProductClick(product.id) }
                         )
                     }
@@ -125,6 +130,7 @@ fun SearchItem(
     title: String,
     subtitle: String,
     icon: ImageVector,
+    imageUrl: String? = null,
     onClick: () -> Unit
 ) {
     Card(
@@ -135,7 +141,16 @@ fun SearchItem(
             modifier = Modifier.padding(16.dp).fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            if (imageUrl != null) {
+                AsyncImage(
+                    model = imageUrl,
+                    contentDescription = null,
+                    modifier = Modifier.size(40.dp).clip(RoundedCornerShape(8.dp)),
+                    contentScale = ContentScale.Crop
+                )
+            } else {
+                Icon(icon, contentDescription = null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(40.dp))
+            }
             Spacer(Modifier.width(16.dp))
             Column {
                 Text(text = title, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)

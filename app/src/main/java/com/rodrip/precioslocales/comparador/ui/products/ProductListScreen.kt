@@ -8,6 +8,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Delete
+import androidx.compose.material.icons.rounded.Edit
 import androidx.compose.material.icons.rounded.Inventory2
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -129,7 +130,7 @@ fun ProductItem(
                 shape = MaterialTheme.shapes.small
             ) {
                 AsyncImage(
-                    model = product.photoUri ?: "https://via.placeholder.com/150",
+                    model = product.photoUri ?: product.remotePhotoUrl ?: "https://via.placeholder.com/150",
                     contentDescription = null,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop
@@ -148,26 +149,22 @@ fun ProductItem(
                     text = product.weightQuantity,
                     style = MaterialTheme.typography.bodySmall
                 )
-                if (!product.barcode.isNullOrEmpty()) {
-                    Text(
-                        text = "EAN: ${product.barcode}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
-                }
+                Text(
+                    text = "$ ${"%.2f".format(Locale.getDefault(), price)}",
+                    style = MaterialTheme.typography.titleLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Black,
+                    modifier = Modifier.padding(horizontal = 8.dp)
+                )
             }
 
-            Text(
-                text = "$ ${"%.2f".format(Locale.getDefault(), price)}",
-                style = MaterialTheme.typography.titleLarge,
-                color = MaterialTheme.colorScheme.primary,
-                fontWeight = FontWeight.Black,
-                modifier = Modifier.padding(horizontal = 8.dp)
-            )
-
-            Row {
-                TextButton(onClick = onEdit) {
-                    Text("Editar")
+            Column {
+                IconButton(onClick = onEdit) {
+                    Icon(
+                        imageVector = Icons.Rounded.Edit,
+                        contentDescription = "Editar",
+                        tint = MaterialTheme.colorScheme.primary
+                    )
                 }
                 IconButton(onClick = onDelete) {
                     Icon(

@@ -73,6 +73,7 @@ fun MainScreen(storeViewModel: StoreViewModel) {
                 StoreListScreen(
                     viewModel = storeViewModel,
                     onAddStore = { navController.navigate(Screen.AddEditStore.createRoute()) },
+                    onAddProduct = { navController.navigate(Screen.AddEditProduct.createRoute()) },
                     onEditStore = { storeId -> navController.navigate(Screen.AddEditStore.createRoute(storeId)) },
                     onStoreClick = { storeId -> navController.navigate(Screen.ProductList.createRoute(storeId)) }
                 )
@@ -119,18 +120,21 @@ fun MainScreen(storeViewModel: StoreViewModel) {
             composable(
                 route = Screen.AddEditProduct.route,
                 arguments = listOf(
-                    navArgument("storeId") { type = NavType.LongType },
+                    navArgument("storeId") { 
+                        type = NavType.LongType
+                        defaultValue = -1L
+                    },
                     navArgument("productId") { 
                         type = NavType.LongType
                         defaultValue = -1L
                     }
                 )
             ) { backStackEntry ->
-                val storeId = backStackEntry.arguments?.getLong("storeId") ?: 0L
+                val storeId = backStackEntry.arguments?.getLong("storeId")?.takeIf { it != -1L }
                 val productId = backStackEntry.arguments?.getLong("productId")?.takeIf { it != -1L }
                 AddEditProductScreen(
                     viewModel = productViewModel,
-                    storeId = storeId,
+                    initialStoreId = storeId,
                     productId = productId,
                     onNavigateBack = { navController.popBackStack() }
                 )

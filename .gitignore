@@ -54,3 +54,4 @@ Thumbs.db
 # API Keys (si usas algún servicio)
 apikey.properties
 secrets.properties
+google-services.json

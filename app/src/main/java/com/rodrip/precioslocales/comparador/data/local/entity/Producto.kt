@@ -10,5 +10,7 @@ data class Producto(
     val name: String,
     val weightQuantity: String,
     val photoUri: String?,
-    val createdAt: Long = System.currentTimeMillis()
+    val createdAt: Long = System.currentTimeMillis(),
+    val remoteId: String? = null,
+    val remotePhotoUrl: String? = null
 )
