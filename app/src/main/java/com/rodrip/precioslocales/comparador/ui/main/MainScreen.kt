@@ -166,7 +166,8 @@ fun MainScreen(storeViewModel: StoreViewModel) {
                     viewModel = productViewModel,
                     productId = productId,
                     storeId = storeId,
-                    onNavigateBack = { navController.popBackStack() }
+                    onNavigateBack = { navController.popBackStack() },
+                    onCompareStores = { navController.popBackStack() }
                 )
             }
         }

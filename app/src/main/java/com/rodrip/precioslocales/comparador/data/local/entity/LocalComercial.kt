@@ -10,5 +10,12 @@ data class LocalComercial(
     val address: String,
     val hours: String,
     val latitude: Double,
-    val longitude: Double
+    val longitude: Double,
+    // Zona geográfica
+    val department: String = "",
+    val localidad: String = "",
+    // Sync con Firestore
+    val remoteId: String? = null,
+    val uploadedBy: String = "",
+    val updatedAt: Long = 0L
 )

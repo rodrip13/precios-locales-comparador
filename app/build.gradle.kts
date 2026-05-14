@@ -79,7 +79,7 @@ dependencies {
     implementation(libs.mlkit.subject.segmentation)
     implementation(libs.kotlinx.coroutines.play.services)
 
-    // Firebase
+    // Firebase (sin Storage — se usa Cloudinary para imágenes)
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.firestore)
     implementation(libs.firebase.auth)
