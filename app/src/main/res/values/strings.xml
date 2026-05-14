@@ -1,3 +1,5 @@
 <resources>
     <string name="app_name">ComparaPreciosRodriP</string>
+    <string name="splash_tagline">Compará mejor. Elegí más rápido.</string>
+    <string name="splash_loading">Preparando tu catálogo local…</string>
 </resources>
