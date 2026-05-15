@@ -2,27 +2,37 @@ package com.rodrip.precioslocales.comparador.data.sync
 
 import android.content.Context
 import android.util.Log
+import com.rodrip.precioslocales.comparador.data.local.CityGroupPreferences
 import com.rodrip.precioslocales.comparador.data.local.SyncPreferences
+import com.rodrip.precioslocales.comparador.data.local.dao.LocalComercialDao
 import com.rodrip.precioslocales.comparador.data.local.dao.ProductoDao
+import com.rodrip.precioslocales.comparador.data.local.entity.LocalComercial
 import com.rodrip.precioslocales.comparador.data.local.entity.Producto
 import com.rodrip.precioslocales.comparador.data.remote.AnonymousAuthManager
 import com.rodrip.precioslocales.comparador.data.remote.RemoteProductDataSource
 import com.rodrip.precioslocales.comparador.data.remote.RemoteProductDataSource.PushResult
+import com.rodrip.precioslocales.comparador.data.remote.RemoteStoreDataSource
+import com.rodrip.precioslocales.comparador.data.remote.RemoteStoreDataSource.StorePushResult
 import com.rodrip.precioslocales.comparador.data.util.ImageCompressor
 
 /**
  * Orquestador del ciclo de sincronización manual.
- * 
- * FASE 1 – PUSH: Sube productos locales nuevos.
- * FASE 1.5 – PUSH FOTOS: Sube fotos locales de productos ya vinculados.
- * FASE 2 – PULL: Baja productos nuevos de la nube.
- * FASE 3 – REPARACIÓN: Descarga fotos de la nube para productos que no las tienen localmente.
+ *
+ * FASE 1   – PUSH productos nuevos.
+ * FASE 1.5 – PUSH fotos de productos vinculados sin foto remota.
+ * FASE 2   – PULL productos nuevos de la nube.
+ * FASE 3   – REPARACIÓN de fotos locales faltantes.
+ * FASE 4   – PUSH locales comerciales nuevos.
+ * FASE 5   – PULL locales por departamentos activos.
  */
 class SyncManager(
     private val context: Context,
     private val productoDao: ProductoDao,
     private val remoteDataSource: RemoteProductDataSource,
-    private val syncPreferences: SyncPreferences
+    private val syncPreferences: SyncPreferences,
+    private val storeDao: LocalComercialDao,
+    private val remoteStoreDataSource: RemoteStoreDataSource,
+    private val cityGroupPreferences: CityGroupPreferences
 ) {
     private val TAG = "SyncManager"
 
@@ -32,6 +42,8 @@ class SyncManager(
         val localPhotosRepaired: Int = 0,
         val remotePhotosUploaded: Int = 0,
         val skippedDuplicates: Int = 0,
+        val storesPushed: Int = 0,
+        val storesPulled: Int = 0,
         val errors: List<String> = emptyList()
     )
 
@@ -49,9 +61,11 @@ class SyncManager(
         var pulled = 0
         var localPhotosRepaired = 0
         var skipped = 0
+        var storesPushed = 0
+        var storesPulled = 0
         val errors = mutableListOf<String>()
 
-        // ── FASE 1: PUSH (Nuevos productos locales a la nube) ─────────────────
+        // ── FASE 1: PUSH productos ────────────────────────────────────────────
         val unsynced = productoDao.getUnsynced()
         Log.d(TAG, "Productos locales sin sincronizar: ${unsynced.size}")
         for (product in unsynced) {
@@ -64,13 +78,11 @@ class SyncManager(
                     productoDao.updateSyncInfo(product.id, result.remoteId, result.remotePhotoUrl)
                     skipped++
                 }
-                is PushResult.Error -> {
-                    errors.add("${product.name}: ${result.message}")
-                }
+                is PushResult.Error -> errors.add("${product.name}: ${result.message}")
             }
         }
 
-        // ── FASE 1.5: PUSH (Subir fotos locales que faltan en la nube) ────────
+        // ── FASE 1.5: PUSH fotos locales que faltan en la nube ────────────────
         val missingRemotePhotos = productoDao.getProductsMissingRemotePhoto()
         Log.d(TAG, "Productos con foto local pero sin foto en la nube: ${missingRemotePhotos.size}")
         for (product in missingRemotePhotos) {
@@ -81,49 +93,39 @@ class SyncManager(
             }
         }
 
-        // ── FASE 2: PULL (Bajar novedades de la nube) ────────────────────────
+        // ── FASE 2: PULL productos ────────────────────────────────────────────
         val since = syncPreferences.getLastSyncedAtOnce()
         Log.d(TAG, "Buscando novedades en la nube desde: $since")
         val remoteProducts = remoteDataSource.pullProductsSince(since)
         Log.d(TAG, "Productos encontrados en la nube: ${remoteProducts.size}")
-
         for (dto in remoteProducts) {
             val existing = dto.barcode.takeIf { it.isNotBlank() }
                 ?.let { productoDao.getProductByBarcode(it) }
-
             if (existing == null) {
-                Log.d(TAG, "Descargando nuevo producto: ${dto.name}")
                 val localPhotoUri = dto.photoUrl?.let { ImageCompressor.downloadAndSave(context, it) }
-                
-                val local = Producto(
-                    barcode = dto.barcode,
-                    name = dto.name,
-                    weightQuantity = dto.weightQuantity,
-                    photoUri = localPhotoUri,
-                    remoteId = dto.remoteId,
-                    remotePhotoUrl = dto.photoUrl
+                productoDao.insertProduct(
+                    Producto(
+                        barcode = dto.barcode,
+                        name = dto.name,
+                        weightQuantity = dto.weightQuantity,
+                        photoUri = localPhotoUri,
+                        remoteId = dto.remoteId,
+                        remotePhotoUrl = dto.photoUrl
+                    )
                 )
-                productoDao.insertProduct(local)
                 pulled++
             } else {
-                // Actualizar info remota si es necesario
                 if (existing.remoteId == null || existing.remotePhotoUrl == null) {
-                    productoDao.updateSyncInfo(
-                        existing.id, 
-                        dto.remoteId, 
-                        dto.photoUrl ?: existing.remotePhotoUrl
-                    )
+                    productoDao.updateSyncInfo(existing.id, dto.remoteId, dto.photoUrl ?: existing.remotePhotoUrl)
                 }
             }
         }
 
-        // ── FASE 3: REPARACIÓN (Descargar fotos locales faltantes) ────────────
-        // Esto arregla los productos que ya estaban pero no tenían la foto descargada
+        // ── FASE 3: REPARACIÓN fotos locales faltantes ───────────────────────
         val missingLocalPhotos = productoDao.getProductsMissingLocalPhoto()
         Log.d(TAG, "Reparando productos sin foto local: ${missingLocalPhotos.size}")
         for (product in missingLocalPhotos) {
             val url = product.remotePhotoUrl ?: continue
-            Log.d(TAG, "Descargando foto para reparar: ${product.name}")
             val localUri = ImageCompressor.downloadAndSave(context, url)
             if (localUri != null) {
                 productoDao.updateProduct(product.copy(photoUri = localUri))
@@ -131,9 +133,64 @@ class SyncManager(
             }
         }
 
-        // Guardar timestamp de esta sincronización
+        // ── FASE 4: PUSH locales comerciales nuevos ──────────────────────────
+        val unsyncedStores = storeDao.getUnsynced()
+        Log.d(TAG, "Locales sin sincronizar: ${unsyncedStores.size}")
+        for (store in unsyncedStores) {
+            when (val result = remoteStoreDataSource.pushStore(store, uid)) {
+                is StorePushResult.Uploaded -> {
+                    storeDao.updateSyncInfo(store.id, result.remoteId)
+                    storesPushed++
+                }
+                is StorePushResult.AlreadyExists -> {
+                    storeDao.updateSyncInfo(store.id, result.remoteId)
+                    skipped++
+                }
+                is StorePushResult.Error -> errors.add("Local ${store.name}: ${result.message}")
+            }
+        }
+
+        // ── FASE 5: PULL locales por departamentos activos ───────────────────
+        val activeDepts = cityGroupPreferences.getActiveDepartmentsOnce()
+        // Si está vacío → sincronizar los 19 departamentos
+        val deptsToSync: Set<String> = activeDepts.ifEmpty {
+            com.rodrip.precioslocales.comparador.data.model.UruguayGeo.getDepartmentNames().toSet()
+        }
+        Log.d(TAG, "Sincronizando locales de ${deptsToSync.size} departamento(s)...")
+        for (dept in deptsToSync) {
+            val remoteStores = remoteStoreDataSource.pullStoresByDepartment(dept, since)
+            for (dto in remoteStores) {
+                // Buscar si ya existe por remoteId o por nombre+coordenadas similares
+                val existing = storeDao.findNearbyByName(
+                    dto.name,
+                    dto.latitude - 0.001, dto.latitude + 0.001,
+                    dto.longitude - 0.001, dto.longitude + 0.001
+                ).firstOrNull { it.remoteId == dto.remoteId || it.remoteId == null }
+
+                if (existing == null) {
+                    storeDao.insertStore(
+                        LocalComercial(
+                            name = dto.name,
+                            address = dto.address,
+                            hours = dto.hours,
+                            department = dto.department,
+                            localidad = dto.localidad,
+                            latitude = dto.latitude,
+                            longitude = dto.longitude,
+                            remoteId = dto.remoteId,
+                            uploadedBy = dto.uploadedBy,
+                            updatedAt = dto.updatedAt
+                        )
+                    )
+                    storesPulled++
+                } else if (existing.remoteId == null) {
+                    storeDao.updateSyncInfo(existing.id, dto.remoteId)
+                }
+            }
+        }
+
         syncPreferences.saveLastSyncedAt(System.currentTimeMillis())
-        Log.d(TAG, "Sincronización terminada. Pushed: $pushed, Pulled: $pulled, Repaired: $localPhotosRepaired")
+        Log.d(TAG, "Sincronización terminada. Products pushed=$pushed pulled=$pulled | Stores pushed=$storesPushed pulled=$storesPulled")
 
         return SyncResult(
             pushed = pushed,
@@ -141,6 +198,8 @@ class SyncManager(
             localPhotosRepaired = localPhotosRepaired,
             remotePhotosUploaded = remotePhotosUploaded,
             skippedDuplicates = skipped,
+            storesPushed = storesPushed,
+            storesPulled = storesPulled,
             errors = errors
         )
     }

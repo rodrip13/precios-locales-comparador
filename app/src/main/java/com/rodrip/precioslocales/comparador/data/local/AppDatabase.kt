@@ -13,7 +13,7 @@ import com.rodrip.precioslocales.comparador.data.local.entity.RegistroPrecio
 
 @Database(
     entities = [LocalComercial::class, Producto::class, RegistroPrecio::class],
-    version = 2,
+    version = 3,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {
@@ -28,6 +28,16 @@ abstract class AppDatabase : RoomDatabase() {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE products ADD COLUMN remoteId TEXT")
                 db.execSQL("ALTER TABLE products ADD COLUMN remotePhotoUrl TEXT")
+            }
+        }
+
+        val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE stores ADD COLUMN department TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE stores ADD COLUMN localidad TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE stores ADD COLUMN remoteId TEXT")
+                db.execSQL("ALTER TABLE stores ADD COLUMN uploadedBy TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE stores ADD COLUMN updatedAt INTEGER NOT NULL DEFAULT 0")
             }
         }
     }

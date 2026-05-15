@@ -35,6 +35,30 @@ class RemoteProductDataSource(private val context: Context) {
         }
     }
 
+    // ─── Búsqueda por nombre (prefijo, mín. 4 chars) ─────────────────────────
+
+    /**
+     * Busca productos en Firestore cuyo nombre empiece con [query].
+     * Usa búsqueda de rango ASCII — requiere índice ASC en el campo "name".
+     * Mínimo 4 caracteres para evitar lecturas masivas.
+     */
+    suspend fun fetchByName(query: String): List<RemoteProductDto> {
+        if (query.length < 4) return emptyList()
+        return try {
+            val end = query.dropLast(1) + (query.last() + 1)
+            val snapshot = collection
+                .whereGreaterThanOrEqualTo("name", query)
+                .whereLessThan("name", end)
+                .limit(8)
+                .get()
+                .await()
+            snapshot.documents.mapNotNull { it.toDto() }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            emptyList()
+        }
+    }
+
     // ─── PUSH: sube producto nuevo con deduplicación ──────────────────────────
 
     sealed class PushResult {

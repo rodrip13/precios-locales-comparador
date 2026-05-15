@@ -4,10 +4,12 @@ import android.app.Application
 import androidx.room.Room
 import com.cloudinary.android.MediaManager
 import com.rodrip.precioslocales.comparador.data.local.AppDatabase
+import com.rodrip.precioslocales.comparador.data.local.CityGroupPreferences
 import com.rodrip.precioslocales.comparador.data.local.SyncPreferences
 import com.rodrip.precioslocales.comparador.data.local.ThemePreferences
 import com.rodrip.precioslocales.comparador.data.remote.AnonymousAuthManager
 import com.rodrip.precioslocales.comparador.data.remote.RemoteProductDataSource
+import com.rodrip.precioslocales.comparador.data.remote.RemoteStoreDataSource
 import com.rodrip.precioslocales.comparador.data.repository.MainRepository
 import com.rodrip.precioslocales.comparador.data.sync.SyncManager
 import kotlinx.coroutines.CoroutineScope
@@ -20,11 +22,14 @@ class MainApplication : Application() {
 
     private val database by lazy {
         Room.databaseBuilder(this, AppDatabase::class.java, AppDatabase.DATABASE_NAME)
-            .addMigrations(AppDatabase.MIGRATION_1_2)
+            .addMigrations(AppDatabase.MIGRATION_1_2, AppDatabase.MIGRATION_2_3)
             .build()
     }
 
     val remoteDataSource by lazy { RemoteProductDataSource(this) }
+    val remoteStoreDataSource by lazy { RemoteStoreDataSource() }
+
+    val cityGroupPreferences by lazy { CityGroupPreferences(this) }
 
     val repository by lazy {
         MainRepository(
@@ -32,7 +37,9 @@ class MainApplication : Application() {
             storeDao = database.localComercialDao(),
             productDao = database.productoDao(),
             priceDao = database.registroPrecioDao(),
-            remoteDataSource = remoteDataSource
+            remoteDataSource = remoteDataSource,
+            remoteStoreDataSource = remoteStoreDataSource,
+            cityGroupPreferences = cityGroupPreferences
         )
     }
 
@@ -45,7 +52,10 @@ class MainApplication : Application() {
             context = this,
             productoDao = database.productoDao(),
             remoteDataSource = remoteDataSource,
-            syncPreferences = syncPreferences
+            syncPreferences = syncPreferences,
+            storeDao = database.localComercialDao(),
+            remoteStoreDataSource = remoteStoreDataSource,
+            cityGroupPreferences = cityGroupPreferences
         )
     }
 

@@ -8,6 +8,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -21,6 +22,7 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -64,7 +66,18 @@ fun AddEditProductScreen(
     var selectedStoreId by rememberSaveable { mutableStateOf(initialStoreId) }
     var expandedStoreMenu by rememberSaveable { mutableStateOf(false) }
 
+    // remoteId / remotePhotoUrl del producto seleccionado desde la nube (para preservarlo al guardar)
+    var suggestionRemoteId by rememberSaveable { mutableStateOf<String?>(null) }
+    var suggestionRemotePhotoUrl by rememberSaveable { mutableStateOf<String?>(null) }
+
     val scannedProductState by viewModel.scannedProductState.collectAsState()
+    val nameSuggestions by viewModel.nameSuggestions.collectAsState()
+    val selectedNameSuggestion by viewModel.selectedNameSuggestion.collectAsState()
+
+    // Estado del dropdown de autocompletado por nombre
+    var showNameSuggestions by rememberSaveable { mutableStateOf(false) }
+    // Flag para saber si los datos fueron cargados desde una sugerencia remota
+    var suggestionLoadedFromRemote by rememberSaveable { mutableStateOf(false) }
 
     val segmenter = remember {
         val options = SubjectSegmenterOptions.Builder()
@@ -100,6 +113,26 @@ fun AddEditProductScreen(
             photoUri = product.photoUri ?: product.remotePhotoUrl
             viewModel.clearScannedProduct()
         }
+    }
+
+    // Reacciona a la selección de una sugerencia por nombre
+    LaunchedEffect(selectedNameSuggestion) {
+        selectedNameSuggestion?.let { product ->
+            name = product.name
+            barcode = product.barcode ?: barcode  // conserva barcode local si ya había uno
+            weightQuantity = product.weightQuantity
+            photoUri = product.photoUri ?: product.remotePhotoUrl
+            suggestionLoadedFromRemote = product.remoteId != null
+            suggestionRemoteId = product.remoteId
+            suggestionRemotePhotoUrl = product.remotePhotoUrl
+            showNameSuggestions = false
+            viewModel.clearSelectedNameSuggestion()
+        }
+    }
+
+    // Muestra el dropdown cuando hay sugerencias y el campo tiene foco (>=4 chars)
+    LaunchedEffect(nameSuggestions) {
+        showNameSuggestions = nameSuggestions.isNotEmpty()
     }
 
     val cameraPermissionLauncher = rememberLauncherForActivityResult(
@@ -215,6 +248,8 @@ fun AddEditProductScreen(
                         weightQuantity = weightQuantity,
                         photoUri = photoUri,
                         price = price.toDoubleOrNull() ?: 0.0,
+                        remoteId = suggestionRemoteId,
+                        remotePhotoUrl = suggestionRemotePhotoUrl,
                         onSuccess = onNavigateBack
                     )
                 },
@@ -237,7 +272,7 @@ fun AddEditProductScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (scannedProductState.source == ProductSource.REMOTE) {
+            if (scannedProductState.source == ProductSource.REMOTE || suggestionLoadedFromRemote) {
                 Surface(
                     shape = MaterialTheme.shapes.small,
                     color = MaterialTheme.colorScheme.primaryContainer,
@@ -334,13 +369,110 @@ fun AddEditProductScreen(
                 }
             }
 
-            OutlinedTextField(
-                value = name,
-                onValueChange = { name = it },
-                label = { Text("Nombre del Producto") },
-                modifier = Modifier.fillMaxWidth(),
-                singleLine = true
-            )
+            // ── Autocompletado de nombre ──────────────────────────────────────
+            ExposedDropdownMenuBox(
+                expanded = showNameSuggestions && nameSuggestions.isNotEmpty(),
+                onExpandedChange = { /* controlado por la query */ }
+            ) {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { value ->
+                        name = value
+                        suggestionLoadedFromRemote = false
+                        viewModel.onNameQueryChanged(value)
+                        if (value.length < 4) showNameSuggestions = false
+                    },
+                    label = { Text("Nombre del Producto") },
+                    modifier = Modifier
+                        .menuAnchor(type = MenuAnchorType.PrimaryEditable, enabled = true)
+                        .fillMaxWidth(),
+                    singleLine = true,
+                    trailingIcon = {
+                        if (name.length >= 4 && nameSuggestions.isNotEmpty()) {
+                            ExposedDropdownMenuDefaults.TrailingIcon(
+                                expanded = showNameSuggestions
+                            )
+                        }
+                    }
+                )
+                ExposedDropdownMenu(
+                    expanded = showNameSuggestions && nameSuggestions.isNotEmpty(),
+                    onDismissRequest = { showNameSuggestions = false }
+                ) {
+                    nameSuggestions.forEach { product ->
+                        DropdownMenuItem(
+                            text = {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                                ) {
+                                    // Miniatura del producto
+                                    val imageModel = product.photoUri ?: product.remotePhotoUrl
+                                    if (imageModel != null) {
+                                        AsyncImage(
+                                            model = imageModel,
+                                            contentDescription = null,
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(6.dp)),
+                                            contentScale = ContentScale.Crop
+                                        )
+                                    } else {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(48.dp)
+                                                .clip(RoundedCornerShape(6.dp))
+                                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                                            contentAlignment = Alignment.Center
+                                        ) {
+                                            Icon(
+                                                Icons.Rounded.PhotoCamera,
+                                                contentDescription = null,
+                                                modifier = Modifier.size(20.dp),
+                                                tint = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                    }
+                                    Column {
+                                        Text(
+                                            product.name,
+                                            style = MaterialTheme.typography.bodyMedium
+                                        )
+                                        if (product.weightQuantity.isNotBlank()) {
+                                            Text(
+                                                product.weightQuantity,
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                        }
+                                        if (product.remoteId != null) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(2.dp)
+                                            ) {
+                                                Icon(
+                                                    Icons.Rounded.Cloud,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(10.dp),
+                                                    tint = MaterialTheme.colorScheme.primary
+                                                )
+                                                Text(
+                                                    "Nube",
+                                                    style = MaterialTheme.typography.labelSmall,
+                                                    color = MaterialTheme.colorScheme.primary
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                            },
+                            onClick = {
+                                viewModel.selectNameSuggestion(product)
+                            }
+                        )
+                    }
+                }
+            }
 
             Row(
                 modifier = Modifier.fillMaxWidth(),

@@ -39,6 +39,10 @@ interface ProductoDao {
     @Query("SELECT * FROM products WHERE name LIKE '%' || :query || '%'")
     fun searchProducts(query: String): Flow<List<Producto>>
 
+    /** Versión suspend (una sola emisión) para usar dentro de flow builders y coroutines. */
+    @Query("SELECT * FROM products WHERE name LIKE '%' || :query || '%' ORDER BY name ASC LIMIT 8")
+    suspend fun searchProductsOnce(query: String): List<Producto>
+
     @Query("""
         SELECT p.*, pr.price as price, pr.timestamp as lastUpdate
         FROM products p
